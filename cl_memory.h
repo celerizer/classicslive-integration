@@ -20,6 +20,24 @@ typedef enum
   CL_SRCTYPE_SIZE
 } cl_src_t;
 
+typedef enum
+{
+  CL_COMPARE_INVALID = 0,
+
+  CL_COMPARE_EQUAL,
+  CL_COMPARE_GREATER,
+  CL_COMPARE_LESS,
+  CL_COMPARE_NOT_EQUAL,
+  CL_COMPARE_INCREASED,
+  CL_COMPARE_DECREASED,
+
+  /** @todo Needed? */
+  CL_COMPARE_BELOW,
+  CL_COMPARE_ABOVE,
+
+  CL_COMPARE_SIZE
+} cl_comparison;
+
 #define CLE_CMPTYPE_EQUAL     1
 #define CLE_CMPTYPE_GREATER   2
 #define CLE_CMPTYPE_LESS      3
