@@ -38,7 +38,7 @@ public:
    */
    virtual void rebuild() = 0;
 
-   virtual void reset(uint8_t value_type) = 0;
+   virtual void reset(void) = 0;
    
    /*
       Redraw the currently visible table rows with new information.

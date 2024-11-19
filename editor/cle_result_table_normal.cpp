@@ -16,45 +16,46 @@ extern "C"
 
 CleResultTableNormal::CleResultTableNormal(QWidget *parent)
 {
-   CleResultTable::init();
+  CleResultTable::init();
 
-   /* Normal-specific table styling */
-   m_Table->setColumnCount(3);
+  /* Normal-specific table styling */
+  m_Table->setColumnCount(3);
 
-   /* Initialize result table column headers */
-   QStringList TableHeader;
-   TableHeader << tr("Address") << tr("Previous") << tr("Current");
-   m_Table->setHorizontalHeaderLabels(TableHeader);
+  /* Initialize result table column headers */
+  QStringList TableHeader;
+  TableHeader << tr("Address") << tr("Previous") << tr("Current");
+  m_Table->setHorizontalHeaderLabels(TableHeader);
 
-   /* Qt connections to parent */
-   connect(this, SIGNAL(addressChanged(cl_addr_t)),
-      parent, SLOT(onAddressChanged(cl_addr_t)));
-   connect(this, SIGNAL(requestAddMemoryNote(cl_memnote_t)),
-      parent, SLOT(requestAddMemoryNote(cl_memnote_t)));
-   connect(this, SIGNAL(requestPointerSearch(cl_addr_t)),
-      parent, SLOT(requestPointerSearch(cl_addr_t)));
+  /* Qt connections to parent */
+  connect(this, SIGNAL(addressChanged(cl_addr_t)),
+    parent, SLOT(onAddressChanged(cl_addr_t)));
+  connect(this, SIGNAL(requestAddMemoryNote(cl_memnote_t)),
+    parent, SLOT(requestAddMemoryNote(cl_memnote_t)));
+  connect(this, SIGNAL(requestPointerSearch(cl_addr_t)),
+    parent, SLOT(requestPointerSearch(cl_addr_t)));
 
-   cl_search_init(&m_Search);
+  cl_search_init(&m_Search);
 }
 
 CleResultTableNormal::~CleResultTableNormal()
 {
-   cl_search_free(&m_Search);
+  cl_search_free(&m_Search);
 }
 
 cl_addr_t CleResultTableNormal::getClickedResultAddress()
 {
-   return m_Table->item(m_Table->currentRow(), COL_ADDRESS)->text().split(" ")[0].toULong(NULL, 16);
+  return m_Table->item(m_Table->currentRow(),
+                       COL_ADDRESS)->text().split(" ")[0].toULong(nullptr, 16);
 }
 
 void *CleResultTableNormal::getSearchData()
 {
-   return (void*)(&m_Search);
+  return &m_Search;
 }
 
 void CleResultTableNormal::onResultClick(QTableWidgetItem *item) //todo
 {
-   emit addressChanged(getClickedResultAddress() & ~0xF);
+  emit addressChanged(getClickedResultAddress() & ~0xF);
 }
 
 void CleResultTableNormal::onResultDoubleClick()
@@ -83,14 +84,14 @@ void CleResultTableNormal::onResultEdited(QTableWidgetItem *result)
 
 void CleResultTableNormal::onClickResultAddMemoryNote()
 {
-   cl_memnote_t note;
+  cl_memnote_t note;
 
-   note.address         = getClickedResultAddress();
-   note.type            = m_Search.params.value_type;
-   note.pointer_offsets = NULL;
-   note.pointer_passes  = 0;
+  note.address = getClickedResultAddress();
+  note.type = m_Search.value_type;
+  note.pointer_offsets = nullptr;
+  note.pointer_passes = 0;
 
-   emit requestAddMemoryNote(note);
+  emit requestAddMemoryNote(note);
 }
 
 void CleResultTableNormal::onClickResultPointerSearch()
@@ -194,21 +195,20 @@ void CleResultTableNormal::rebuild()
    }
 }
 
-void CleResultTableNormal::reset(uint8_t value_type)
+void CleResultTableNormal::reset(void)
 {
-   cl_search_reset(&m_Search);
-   m_Table->setRowCount(0);
+  cl_search_free(&m_Search);
 }
 
 void CleResultTableNormal::run()
 {
    QTableWidgetItem *item;
    char     temp_string[32];
-   uint8_t  size, val_type;
-   uint32_t address, curr_value = 0, prev_value = 0, i, j;
-
-   size     = m_Search.params.size;
-   val_type = m_Search.params.value_type;
+   unsigned size = m_Search.value_size;
+   cl_value_type val_type = m_Search.value_type;
+   cl_addr_t address;
+   uint32_t curr_value = 0, prev_value = 0;
+   unsigned i;
 
    for (i = 0; i < m_Table->rowCount(); i++)
    {
@@ -227,7 +227,7 @@ void CleResultTableNormal::run()
       address = item->text().split(" ")[0].toULong(NULL, 16);
 
       if (!cl_read_memory(&curr_value, NULL, address, size) ||
-          !cl_read_search(&prev_value, &m_Search, NULL, address))
+          !cl_search_read(&prev_value, &m_Search, address))
          break;
 
       /* Update previous value column */
@@ -244,40 +244,37 @@ void CleResultTableNormal::run()
          item->setText(temp_string);
 
          /* Display changed values in red */
-         item->setTextColor(prev_value != curr_value ? Qt::red : Qt::white);
+         item->setForeground(prev_value != curr_value ? Qt::red : Qt::white);
       }
    }
 }
 
 bool CleResultTableNormal::step(const QString& text)
 {
-   void *compare_value;
-   bool  no_input = text.isEmpty();
-   bool  ok = true;
+  cl_counter_t compare_value;
+  bool no_input = text.isEmpty();
+  bool ok = true;
 
-   if (m_Search.params.value_type == CL_MEMTYPE_FLOAT)
-      compare_value = new float(text.toFloat(&ok));
-   else
-      compare_value = new uint32_t(stringToValue(text, &ok));
+  if (m_Search.value_type == CL_MEMTYPE_FLOAT)
+    cl_ctr_store_float(&compare_value, text.toDouble(&ok));
+  else
+    compare_value = new uint32_t(stringToValue(text, &ok));
 
-   /* Run the C code for doing the actual search */
-   if (ok || no_input)
-      cl_search_step
-      (
-         &m_Search,
-         no_input ? NULL : compare_value
-      );
-   else if (text.front() == '"' && text.back() == '"')
-      cl_search_ascii
-      (
-         &m_Search, 
-         text.mid(1, text.length() - 2).toStdString().c_str(), 
-         text.length() - 2
-      );
-   else
-      return false;
-   free(compare_value);
-   rebuild();
+  if (no_input)
+    m_Search.source = CL_SRCTYPE_PREVIOUS_RAM;
 
-   return true;
+  /* Run the C code for doing the actual search */
+  if (ok || no_input)
+    cl_search_step(&m_Search);
+  /** @todo reimplement string search
+  else if (text.front() == '"' && text.back() == '"')
+    cl_search_ascii(&m_Search,
+                    text.mid(1, text.length() - 2).toStdString().c_str(),
+                    text.length() - 2);
+  */
+  else
+    return false;
+  rebuild();
+
+  return true;
 }

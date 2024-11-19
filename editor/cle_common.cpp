@@ -1,52 +1,52 @@
 #include "cle_common.h"
 
-uint32_t stringToValue(QString string, bool *ok)
+bool stringToCounter(cl_counter_t *counter, QString string, bool *ok)
 {
-   if (string.isEmpty())
-      return 0;
-   else
-   {
-      uint8_t base = 0;
-      bool negative = false;
-      char prefix = string.at(0).toLatin1();
+  if (string.isEmpty())
+    return false;
+  else
+  {
+    int base = 0;
+    bool negative = false;
+    char prefix = string.at(0).toLatin1();
 
-      /* Pop one more if entered value is negative */
-      if (prefix == '-')
-      {
-         negative = true;
-         string.remove(0, 1);
-         prefix = string.at(0).toLatin1();
-      }
+    /* Pop one more if entered value is negative */
+    if (prefix == '-')
+    {
+      negative = true;
+      string.remove(0, 1);
+      prefix = string.at(0).toLatin1();
+    }
 
-      /* Return interpretation of entered number */
-      switch (tolower(prefix))
-      {
-      case 'b':
-         /* Binary */
-         base = 2;
-         break;
-      case 'o':
-         /* Octal */
-         base = 8;
-         break;
-      case 'd':
-         /* Decimal */
-         base = 10;
-         break;
-      case 'h':
-      case 'x':
-         /* Hexidecimal */
-         base = 16;
-      }
+    /* Return interpretation of entered number */
+    switch (tolower(prefix))
+    {
+    case 'b':
+      /* Binary */
+      base = 2;
+      break;
+    case 'o':
+      /* Octal */
+      base = 8;
+      break;
+    case 'd':
+      /* Decimal */
+      base = 10;
+      break;
+    case 'h':
+    case 'x':
+      /* Hexidecimal */
+      base = 16;
+    }
 
-      if (base)
-         string.remove(0, 1);
-      else
-         base = 10; // TODO: Config option for default base?
+    if (base)
+      string.remove(0, 1);
+    else
+      base = 10; // TODO: Config option for default base?
 
-      return negative ? 0 - (uint32_t)string.toInt(ok, base) : 
-         string.toUInt(ok, base);
-   }
+    return cl_ctr_store_int(counter, negative ? 0 - string.toInt(ok, base) :
+                                                string.toInt(ok, base)) && ok;
+  }
 }
 
 void valueToString(char *string, uint8_t length, uint32_t value, 

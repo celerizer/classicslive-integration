@@ -163,7 +163,7 @@ void CleResultTablePointer::rebuild()
    }
 }
 
-void CleResultTablePointer::reset(uint8_t value_type)
+void CleResultTablePointer::reset(void)
 {
    cl_pointersearch_free(&m_Search);
 }

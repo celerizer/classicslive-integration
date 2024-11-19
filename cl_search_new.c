@@ -48,8 +48,43 @@ static cl_search_page_t *cl_search_page_init(const cl_search_t *search,
   if (search)
   {
     cl_search_page_t *page = calloc(1, sizeof(cl_search_page_t));
+    signed first_match = -1;
+    unsigned last_match = 0;
+    unsigned matches = 0;
+    unsigned i;
 
     cl_read_memory(buffer, region, address, search->page_size);
+
+    for (i = 0; i < search->page_size; i += search->value_size)
+    {
+      if (cl_search_value_matches(NULL, NULL, search->comparison))
+      {
+        validity[i] = 1;
+        matches++;
+        if (first_match < 0)
+          first_match = i;
+        last_match = i;
+      }
+    }
+
+    if (matches)
+    {
+      /* Page claims the buffers, calling function is responsible for making
+       * new ones */
+      page->data = buffer;
+      page->validity = validity;
+
+      page->region = region;
+      page->start = address;
+      page->matches = matches;
+
+      return page;
+    }
+    else
+    {
+      free(page);
+      return NULL;
+    }
   }
   return NULL;
 }
@@ -58,7 +93,8 @@ static cl_search_page_t *cl_search_page_init(const cl_search_t *search,
  * Frees a search page from memory.
  * Returns the next page in sequence, or NULL if it is the final page.
  */
-static cl_search_page_t *cl_search_page_free(cl_search_page_t *page)
+static cl_search_page_t *cl_search_page_free(cl_search_t *search,
+                                             cl_search_page_t *page)
 {
   if (page)
   {
@@ -69,6 +105,10 @@ static cl_search_page_t *cl_search_page_free(cl_search_page_t *page)
       page->prev->next = page->next;
     if (page->next)
       page->next->prev = page->prev;
+    if (search->begin == page)
+      search->begin = page->next;
+    if (search->end == page)
+      search->end = page->prev;
 
     /* Free all the memory */
     free(page->data);
@@ -86,7 +126,7 @@ static unsigned cl_search_step_first(cl_search_t *search)
   if (search)
   {
     uint8_t *buffer = malloc(search->page_size);
-    uint8_t *validity = malloc(search->page_size);
+    uint8_t *validity = calloc(search->page_size, sizeof(uint8_t));
     unsigned total_matches = 0;
     unsigned page_count = 0;
     unsigned i;
@@ -118,7 +158,7 @@ static unsigned cl_search_step_first(cl_search_t *search)
 
           /* Re-allocate the buffers for the next valid page */
           buffer = malloc(search->page_size);
-          validity = malloc(search->page_size);
+          validity = calloc(search->page_size, sizeof(uint8_t));
         }
       }
     }
@@ -132,9 +172,67 @@ static unsigned cl_search_step_first(cl_search_t *search)
     return 0;
 }
 
+/** @todo this is slow */
+static cl_search_page_t *cl_search_page_for_address(const cl_search_t *search,
+                                                    const cl_addr_t address)
+{
+  if (search)
+  {
+    cl_search_page_t *page = search->begin;
+
+    while (page)
+    {
+      if (page->start < address && address < page->start + search->page_size)
+        return page;
+      else if (page->start > address)
+        return NULL;
+      page = page->next;
+    }
+  }
+
+  return NULL;
+}
+
+bool cl_search_read(cl_arg_t *dst, const cl_search_t *search,
+                    const cl_addr_t address)
+{
+  cl_search_page_t *page = cl_search_page_for_address(search, address);
+
+  if (page)
+    return cl_read(dst, page->data, address - page->start,
+                   search->value_size, page->region->endianness);
+
+  return false;
+}
+
+bool cl_search_remove(cl_search_t *search, const cl_addr_t address)
+{
+  cl_search_page_t *page = cl_search_page_for_address(search, address);
+
+  if (page)
+  {
+    uint8_t *valid = &page->validity[address - page->start];
+
+    if (*valid)
+    {
+      *valid = 0;
+      page->matches--;
+      search->matches--;
+      if (page->matches == 0)
+        cl_search_page_free(search, page);
+
+      return true;
+    }
+  }
+
+  return false;
+}
+
 unsigned cl_search_step(cl_search_t *search)
 {
-  if (search && search->begin)
+  if (search && search->steps == 0)
+    return cl_search_step_first(search);
+  else if (search->begin)
   {
     cl_search_page_t *page = search->begin;
     uint8_t *buffer = malloc(search->page_size);
@@ -159,7 +257,7 @@ unsigned cl_search_step(cl_search_t *search)
       if (!cl_read_memory(buffer, NULL, page->start, search->page_size))
       {
         /* Free the page if its data was unable to be read */
-        page = cl_search_page_free(page);
+        page = cl_search_page_free(search, page);
         continue;
       }
 
@@ -206,10 +304,11 @@ unsigned cl_search_step(cl_search_t *search)
         page = page->next;
       }
       else
-        page = cl_search_page_free(page);
+        page = cl_search_page_free(search, page);
     }
     search->matches = total_matches;
     search->page_count = page_count;
+    search->steps++;
     free(buffer);
 
     return total_matches;
@@ -218,10 +317,9 @@ unsigned cl_search_step(cl_search_t *search)
     return 0;
 }
 
-cl_search_t *cl_search_init(void)
+void cl_search_init(cl_search_t *search)
 {
-  cl_search_t *search = (cl_search_t*)calloc(sizeof(cl_search_t), 1);
-
+  memset(search, 0, sizeof(cl_search_t));
   search->comparison = CL_COMPARE_EQUAL;
   search->matches = 0;
   search->page_count = 0;
@@ -232,8 +330,6 @@ cl_search_t *cl_search_init(void)
 
   search->begin = NULL;
   search->end = NULL;
-
-  return search;
 }
 
 void cl_search_free(cl_search_t *search)
@@ -245,7 +341,7 @@ void cl_search_free(cl_search_t *search)
 
     while (page)
     {
-      page = cl_search_page_free(page);
+      page = cl_search_page_free(search, page);
       i++;
     }
     if (i != search->page_count)

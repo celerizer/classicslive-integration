@@ -253,7 +253,7 @@ void CleMemoryInspector::onClickSearch()
 
 void CleMemoryInspector::onHexWidgetValueEdited(cl_addr_t address, uint8_t value)
 {
-   cl_write_memory(NULL, address, cl_sizeof_memtype(getCurrentSizeType()), &value);
+  cl_write_memory(NULL, address, cl_sizeof_memtype(getCurrentSizeType()), &value);
 }
 
 void CleMemoryInspector::onClickTabRename()

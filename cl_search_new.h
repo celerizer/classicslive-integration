@@ -38,6 +38,8 @@ struct cl_search_page_t
 
 typedef struct
 {
+  cl_value_type value_type;
+
   unsigned value_size;
 
   /** The number of bytes searched in each page */
@@ -67,9 +69,17 @@ typedef struct
   cl_search_page_t *end;
 } cl_search_t;
 
-cl_search_t *cl_search_init(void);
-
 void cl_search_free(cl_search_t *search);
+
+/** Initializes a search to default values */
+void cl_search_init(cl_search_t *search);
+
+/** Reads a value from the page backup memory for the given address */
+bool cl_search_read(cl_arg_t *dst, const cl_search_t *search,
+                    const cl_addr_t address);
+
+/** Removes a given address from the validity buffer */
+bool cl_search_remove(cl_search_t *search, const cl_addr_t address);
 
 unsigned cl_search_step(cl_search_t *search);
 
